@@ -49,12 +49,6 @@ my $Timeout = 2;
 my $MaxTimeout = 8;
 my $Retries = 3;
 
-my $debug = 0;
-
-sub dprint {
-    print STDERR @_ if $debug;
-}
-
 sub new
 {
     my $pkg  = shift;
@@ -73,7 +67,7 @@ sub new
     $tftp->{'max_timeout'} = $arg{MaxTimeout} || $MaxTimeout;
     $tftp->{'retries'} = $arg{Retries} || $Retries;
     $tftp->{'errstr'} = '';
-
+    $tftp->{'debug'}= $arg{Debug};
     bless($tftp,$pkg);
 }
 
@@ -149,8 +143,9 @@ sub get
     $remote_paddr = sockaddr_in($tftp->{'port'}, $remote_iaddr);
     # send request packet
     $outlen = send($sock, $outbuf, 0, $remote_paddr);
-    dprint("sent:$OPS[$RRQ]:$remote:$mode:$outlen\n");
+    print STDERR "sent:$OPS[$RRQ]:$remote:$mode:$outlen\n" if $tftp->{'debug'};
     # prepare to wait for DATA
+    print STDERR "fileno($sock) = ", fileno($sock),"\n"  if $tftp->{'debug'};
     vec($rin='', fileno($sock),1) = 1;
     $inlen = 0; $block = 0; $expected_block = 1; $retry = 0;
     while (1) {
@@ -163,16 +158,18 @@ sub get
        $retry++, goto DO_GET_SEND
 	   unless vec($rout,fileno($sock),1) and !vec($eout,fileno($sock),1);
        # recieve incoming packet
-       dprint("trying recv:select returned $count:$!\n");
+       print STDERR "trying recv:select returned $count:$!\n" if $tftp->{'debug'};
        $remote_paddr = recv($sock, $inbuf, $TftpBufSize,0);
        # check source, ignore if not from original source address
        ($port, $remote_iaddr) = sockaddr_in($remote_paddr);
        next if $last_paddr and $last_paddr ne $remote_paddr;
        $last_paddr ||= $remote_paddr;
-       $host = gethostbyaddr($remote_iaddr, AF_INET);
        ($op,$block,$data) = unpack("nna*",$inbuf);
        $inlen = length($data);
-       dprint("recvd:$host:$port:$OPS[$op]:$block:$inlen:$!\n");
+       if ($tftp->{'debug'}) {
+	   $host = gethostbyaddr($remote_iaddr, AF_INET);
+	   print STDERR "recvd:$host:$port:$OPS[$op]:$block:$inlen:$!\n";
+       }
        # check packet type
        if ($op == $ERR) { $tftp->{'errstr'} = $data; last } # abort on ERR
        next unless $op == $DATA; # ignore other non DATA packets
@@ -197,7 +194,7 @@ sub get
 DO_GET_SEND:
 	  # (re)send pending ACK (or RRQ)
           $outlen = send($sock, $outbuf, 0, $remote_paddr);
-          dprint("sent:",$OPS[unpack("n",$outbuf)],":$block:$outlen:$!\n");
+          print STDERR "sent:",$OPS[unpack("n",$outbuf)],":$block:$outlen:$!\n" if $tftp->{'debug'};
        } else {
 	   $tftp->{'errstr'} = "Bad block:$block:expected:$expected_block";
 	   last;
@@ -252,7 +249,7 @@ sub put
     $remote_paddr = sockaddr_in($tftp->{'port'}, $remote_iaddr);
     # send request packet
     $outlen = send($sock, $outbuf, 0, $remote_paddr);
-    dprint("sent:$OPS[$WRQ]:$remote:$mode:$outlen:$!\n");
+    print STDERR "sent:$OPS[$WRQ]:$remote:$mode:$outlen:$!\n" if $tftp->{'debug'};
     # prepare to wait for ACK
     vec($rin='', fileno($sock), 1) = 1;
     $inlen = 0; $block = 0; $expected_block = 0; $retry = 0;
@@ -266,16 +263,18 @@ sub put
        $retry++, goto DO_PUT_SEND
 	   unless vec($rout,fileno($sock),1) and !vec($eout,fileno($sock),1);
        # recieve incoming packet
-       dprint("trying recv:select returned $count:$!\n");
+       print STDERR "trying recv:select returned $count:$!\n" if $tftp->{'debug'};
        $remote_paddr = recv($sock, $inbuf, $TftpBufSize,0);
        # check source, ignore if not from original source address
        ($port, $remote_iaddr) = sockaddr_in($remote_paddr);
        next if $last_paddr and $last_paddr ne $remote_paddr;
        $last_paddr ||= $remote_paddr;
-       $host = gethostbyaddr($remote_iaddr, AF_INET);
        ($op,$block,$data) = unpack("nna*",$inbuf);
        $inlen = length($data);
-       dprint("recvd:$host:$port:$OPS[$op]:$block:$inlen:$!\n");
+       if ($tftp->{'debug'}) {
+	   $host = gethostbyaddr($remote_iaddr, AF_INET);
+	   print STDERR "recvd:$host:$port:$OPS[$op]:$block:$inlen:$!\n";
+       }
        if ($op == $ERR) { $tftp->{'errstr'} = $data; last } # abort on ERR
        next unless $op == $ACK; # ignore other non ACK packets
        if ($block == $expected_block) {
@@ -298,12 +297,12 @@ sub put
 DO_PUT_SEND:
 	  # (re)send pending DATA (or WRQ)
 	   $outlen = send($sock, $outbuf, 0, $remote_paddr);
-	   dprint("sent:",$OPS[unpack("n",$outbuf)],":$expected_block:$outlen\n");
+	   print STDERR "sent:",$OPS[unpack("n",$outbuf)],":$expected_block:$outlen\n" if $tftp->{'debug'};
        } elsif ($block == $expected_block - 1) {
-           dprint("duplicate ACK:$block\n");
+           print STDERR "duplicate ACK:$block\n" if $tftp->{'debug'};
 	   next; # ignore duplicate ACK to avoid "sorcerer's apprentice"
        } else {
-	   dprint("bad block:expected block:$expected_block\n");
+	   print STDERR "bad block:expected block:$expected_block\n" if $tftp->{'debug'};
 	   $tftp->{'errstr'} = "Bad block:$block:expected:$expected_block";
 	   last;
        }
