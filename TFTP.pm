@@ -269,12 +269,10 @@ sub put
        ($port, $remote_iaddr) = sockaddr_in($remote_paddr);
        next if $last_paddr and $last_paddr ne $remote_paddr;
        $last_paddr ||= $remote_paddr;
+       $host = gethostbyaddr($remote_iaddr, AF_INET);
        ($op,$block,$data) = unpack("nna*",$inbuf);
        $inlen = length($data);
-       if ($tftp->{'debug'}) {
-	   $host = gethostbyaddr($remote_iaddr, AF_INET);
-	   print STDERR "recvd:$host:$port:$OPS[$op]:$block:$inlen:$!\n";
-       }
+       print STDERR "recvd:$host:$port:$OPS[$op]:$block:$inlen:$!\n" if $tftp->{'debug'};
        if ($op == $ERR) { $tftp->{'errstr'} = $data; last } # abort on ERR
        next unless $op == $ACK; # ignore other non ACK packets
        if ($block == $expected_block) {
